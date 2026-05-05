@@ -1,7 +1,7 @@
 {
   "name": "glglz-just-music",
   "version": "1.0.0",
-  "description": "Monitor Galgalatz radio and add now-playing songs to a Spotify playlist",
+  "description": "Monitor Galgalatz radio and add now-playing songs to Spotify and YouTube playlists",
   "main": "src/index.js",
   "engines": {
     "node": ">=18"
@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node src/index.js",
     "get-token": "node scripts/get-token.js",
+    "get-youtube-token": "node scripts/get-youtube-token.js",
     "inspect": "node scripts/inspect-page.js"
   },
   "dependencies": {

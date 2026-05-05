@@ -15,6 +15,10 @@ for (const key of REQUIRED) {
   }
 }
 
+// YouTube is optional — all four vars must be present to enable it.
+const YT_VARS = ['YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'YOUTUBE_REFRESH_TOKEN', 'YOUTUBE_PLAYLIST_ID'];
+const youtubeEnabled = YT_VARS.every((k) => !!process.env[k]);
+
 module.exports = {
   spotify: {
     clientId:     process.env.SPOTIFY_CLIENT_ID,
@@ -22,6 +26,13 @@ module.exports = {
     refreshToken: process.env.SPOTIFY_REFRESH_TOKEN,
     playlistId:   process.env.SPOTIFY_PLAYLIST_ID,
   },
+  // null when YouTube env vars are not configured
+  youtube: youtubeEnabled ? {
+    clientId:     process.env.YOUTUBE_CLIENT_ID,
+    clientSecret: process.env.YOUTUBE_CLIENT_SECRET,
+    refreshToken: process.env.YOUTUBE_REFRESH_TOKEN,
+    playlistId:   process.env.YOUTUBE_PLAYLIST_ID,
+  } : null,
   scraper: {
     url:        process.env.GLGLZ_URL || 'https://glz.co.il/%D7%92%D7%9C%D7%92%D7%9C%D7%A6',
     // Set CHROMIUM_PATH=/usr/bin/chromium-browser on Raspberry Pi 3 (ARM32)

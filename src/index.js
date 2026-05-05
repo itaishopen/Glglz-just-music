@@ -6,6 +6,7 @@ const config  = require('./config');
 const logger  = require('./logger');
 const scraper = require('./scraper');
 const spotify = require('./spotify');
+const youtube = require('./youtube');
 const state   = require('./state');
 const ignore  = require('./ignore');
 
@@ -42,7 +43,7 @@ async function tick() {
     return;
   }
 
-  // 4. Skip if same song as last cycle
+  // 3. Skip if same song as last cycle
   const lastSong = state.getLastSong();
   if (normalized === lastSong) {
     logger.info('Same song still playing — no action needed');
@@ -99,19 +100,76 @@ async function tick() {
     // Non-fatal — the track was added; just log and continue
   }
 
-  // 9. Persist state
+  // 9. YouTube playlist (optional — skipped if YOUTUBE_* vars are not set)
+  if (config.youtube) {
+    await addToYouTube(currentSong);
+  }
+
+  // 10. Persist state
   state.setLastSong(normalized);
   logger.info(`State updated ✓`);
+}
+
+// ── YouTube helper ────────────────────────────────────────────────────────────
+
+/**
+ * Search YouTube for the song and add it to the YouTube playlist.
+ * Errors are logged but never bubble up — a YouTube failure must not prevent
+ * the state from being updated or future Spotify additions from working.
+ */
+async function addToYouTube(songQuery) {
+  // Search
+  let video;
+  try {
+    video = await youtube.searchVideo(songQuery);
+  } catch (err) {
+    logger.error(`[youtube] Search failed: ${err.message}`);
+    return;
+  }
+
+  if (!video) {
+    logger.warn(`[youtube] No result found for: "${songQuery}"`);
+    return;
+  }
+
+  logger.info(`[youtube] Found: "${video.title}" by ${video.channelTitle}`);
+
+  // Duplicate check
+  try {
+    if (await youtube.isVideoInPlaylist(video.videoId)) {
+      logger.info('[youtube] Video already in playlist — skipping add');
+      return;
+    }
+  } catch (err) {
+    logger.warn(`[youtube] Duplicate check failed (proceeding anyway): ${err.message}`);
+  }
+
+  // Add
+  try {
+    await youtube.addVideoToPlaylist(video.videoId);
+    logger.info(`[youtube] ✓ Added: "${video.title}" by ${video.channelTitle}`);
+  } catch (err) {
+    logger.error(`[youtube] Add to playlist failed: ${err.message}`);
+    return;
+  }
+
+  // Trim
+  try {
+    await youtube.trimPlaylist(config.monitor.maxPlaylistSize);
+  } catch (err) {
+    logger.error(`[youtube] Trim failed: ${err.message}`);
+  }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
 
 async function main() {
   logger.info('════════════════════════════════════════════════════════');
-  logger.info(' Galgalatz → Spotify Monitor  (starting up)');
+  logger.info(' Galgalatz → Spotify + YouTube Monitor  (starting up)');
   logger.info(`  Check interval : ${config.monitor.intervalMs / 1000}s`);
   logger.info(`  Playlist cap   : ${config.monitor.maxPlaylistSize} songs`);
-  logger.info(`  Playlist ID    : ${config.spotify.playlistId}`);
+  logger.info(`  Spotify playlist : ${config.spotify.playlistId}`);
+  logger.info(`  YouTube playlist : ${config.youtube ? config.youtube.playlistId : 'disabled'}`);
   logger.info('════════════════════════════════════════════════════════');
 
   // Run the first tick immediately, then wait between subsequent ticks.
