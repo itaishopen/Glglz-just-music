@@ -1,0 +1,6 @@
+node_modules/
+.env
+data/state.json
+data/inspect-screenshot.png
+data/inspect-body.txt
+logs/*.log

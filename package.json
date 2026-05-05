@@ -1,0 +1,22 @@
+{
+  "name": "glglz-just-music",
+  "version": "1.0.0",
+  "description": "Monitor Galgalatz radio and add now-playing songs to a Spotify playlist",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "get-token": "node scripts/get-token.js",
+    "inspect": "node scripts/inspect-page.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "playwright-core": "^1.44.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {},
+  "license": "MIT"
+}

@@ -1,0 +1,34 @@
+[Unit]
+Description=Galgalatz → Spotify Monitor
+Documentation=https://github.com/itaishopen/glglz-just-music
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# ── Paths — update if you cloned the repo somewhere else ────────────────────
+WorkingDirectory=/home/pi/glglz-just-music
+ExecStart=/usr/bin/node src/index.js
+
+# Restart automatically on any failure; wait 30 s between attempts
+Restart=always
+RestartSec=30
+
+# Give the process up to 60 s to shut down cleanly
+TimeoutStopSec=60
+
+# Log via journald (view with: journalctl -u glglz-monitor -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=glglz-monitor
+
+# Environment
+Environment=NODE_ENV=production
+# Uncomment the line below if you want to override the .env file path:
+# EnvironmentFile=/home/pi/glglz-just-music/.env
+
+[Install]
+WantedBy=multi-user.target
