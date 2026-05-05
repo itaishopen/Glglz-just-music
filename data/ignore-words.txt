@@ -1,0 +1,7 @@
+# Songs whose title contains any word or phrase listed here will be skipped.
+# - One entry per line (word or multi-word phrase)
+# - Matching is case-insensitive and substring-based
+# - Lines starting with # are comments; blank lines are ignored
+# - Changes take effect on the next check — no restart needed
+
+גלגלץ

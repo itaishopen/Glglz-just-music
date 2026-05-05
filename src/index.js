@@ -7,6 +7,7 @@ const logger  = require('./logger');
 const scraper = require('./scraper');
 const spotify = require('./spotify');
 const state   = require('./state');
+const ignore  = require('./ignore');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,7 +35,14 @@ async function tick() {
     return;
   }
 
-  // 2. Skip if same song as last cycle
+  // 2. Check ignore list (data/ignore-words.txt) — re-read on every tick so
+  //    the user can add words without restarting the script.
+  if (ignore.shouldIgnore(currentSong)) {
+    state.setLastSong(normalized); // prevent repeated log spam on the same ignored title
+    return;
+  }
+
+  // 4. Skip if same song as last cycle
   const lastSong = state.getLastSong();
   if (normalized === lastSong) {
     logger.info('Same song still playing — no action needed');
@@ -43,7 +51,7 @@ async function tick() {
 
   logger.info(`New song detected (was: "${lastSong ?? 'none'}")`);
 
-  // 3. Search Spotify
+  // 5. Search Spotify
   let track;
   try {
     track = await spotify.searchTrack(currentSong);
@@ -62,7 +70,7 @@ async function tick() {
 
   logger.info(`Found on Spotify: "${track.name}" by ${track.artists} (popularity: ${track.popularity})`);
 
-  // 4. Check for duplicates already in the playlist
+  // 6. Check for duplicates already in the playlist
   try {
     const alreadyIn = await spotify.isTrackInPlaylist(track.uri);
     if (alreadyIn) {
@@ -74,7 +82,7 @@ async function tick() {
     logger.warn(`[spotify] Duplicate check failed (proceeding anyway): ${err.message}`);
   }
 
-  // 5. Add to playlist
+  // 7. Add to playlist
   try {
     await spotify.addTrackToPlaylist(track.uri);
     logger.info(`✓ Added to playlist: "${track.name}" by ${track.artists}`);
@@ -83,7 +91,7 @@ async function tick() {
     return;
   }
 
-  // 6. Trim playlist to configured max size
+  // 8. Trim playlist to configured max size
   try {
     await spotify.trimPlaylist(config.monitor.maxPlaylistSize);
   } catch (err) {
@@ -91,7 +99,7 @@ async function tick() {
     // Non-fatal — the track was added; just log and continue
   }
 
-  // 7. Persist state
+  // 9. Persist state
   state.setLastSong(normalized);
   logger.info(`State updated ✓`);
 }

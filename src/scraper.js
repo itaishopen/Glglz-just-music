@@ -90,10 +90,28 @@ async function getNowPlaying() {
 }
 
 /**
- * Try three progressive strategies to locate and return the song text from the
+ * Try four progressive strategies to locate and return the song text from the
  * already-loaded page.  Throws if all strategies fail.
  */
 async function extractNowPlaying(page) {
+  // ── Strategy 0: direct CSS selector ───────────────────────────────────────
+  // The site renders the song title in <span class="current-song">.
+  // This is the fastest and most precise strategy; update the selector here
+  // if the site ever changes its class name.
+  try {
+    await page.waitForSelector('span.current-song', { timeout: 20000 });
+    const text = await page.locator('span.current-song').first().textContent();
+    if (text) {
+      const song = cleanSongText(text);
+      if (song) {
+        logger.debug(`[scraper] Strategy 0 (CSS selector) succeeded: "${song}"`);
+        return song;
+      }
+    }
+  } catch (err) {
+    logger.debug(`[scraper] Strategy 0 failed: ${err.message}`);
+  }
+
   // ── Strategy 1: innerText line extraction ──────────────────────────────────
   // Most reliable: waits for JS to render the text, then splits by newline so
   // we get the whole "מתנגן כעת: Artist - Title" line regardless of CSS changes.
@@ -186,8 +204,21 @@ async function extractNowPlaying(page) {
 }
 
 /**
+ * Clean raw text from a dedicated element (e.g. span.current-song) that may or
+ * may not include the Hebrew label.  Strips the label if present; otherwise uses
+ * the text as-is.  Returns null if the result is too short to be a real song.
+ */
+function cleanSongText(text) {
+  if (!text) return null;
+  const stripped = LABEL_REGEX.test(text) ? text.replace(LABEL_REGEX, '') : text;
+  const song = stripped.replace(/\s+/g, ' ').trim();
+  return song.length >= 3 ? song : null;
+}
+
+/**
  * Strip the Hebrew label prefix and return only the song text, or null if the
- * label is not present in the string.
+ * label is not present in the string.  Used by Strategies 1–3 which always
+ * capture the whole line including the label.
  */
 function parseSong(text) {
   if (!text) return null;
