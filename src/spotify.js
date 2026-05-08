@@ -79,7 +79,7 @@ async function apiRequest(method, url, data = null, maxRetries = 3) {
       const response = await axios({
         method,
         url: fullUrl,
-        data,
+        ...(isWrite ? { data } : {}),
         headers: {
           Authorization: `Bearer ${token}`,
           ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
@@ -102,10 +102,9 @@ async function apiRequest(method, url, data = null, maxRetries = 3) {
         }
 
         if (status === 403) {
+          logger.error(`[spotify] 403 raw body: ${JSON.stringify(body)}`);
           throw new Error(
-            'Spotify API 403 Forbidden — your token lacks playlist scopes.\n' +
-            '  → Re-run  node scripts/get-token.js  on your laptop to get a new token,\n' +
-            '    then update SPOTIFY_REFRESH_TOKEN in your .env file on the Pi.'
+            `Spotify API 403 Forbidden on ${method} ${url}: ${JSON.stringify(body)}`
           );
         }
 
