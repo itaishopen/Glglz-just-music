@@ -56,6 +56,15 @@ async function getAccessToken() {
   _accessToken    = response.data.access_token;
   _tokenExpiresAt = Date.now() + response.data.expires_in * 1000;
   logger.info(`[spotify] Token scopes granted: ${response.data.scope || '(none returned)'}`);
+
+  // Spotify occasionally rotates refresh tokens. Use the new one in-memory so
+  // subsequent refreshes succeed, and warn the operator to persist it.
+  if (response.data.refresh_token && response.data.refresh_token !== config.spotify.refreshToken) {
+    config.spotify.refreshToken = response.data.refresh_token;
+    logger.warn('[spotify] Spotify issued a new refresh token — update SPOTIFY_REFRESH_TOKEN in .env:');
+    logger.warn(`[spotify]   SPOTIFY_REFRESH_TOKEN=${response.data.refresh_token}`);
+  }
+
   return _accessToken;
 }
 

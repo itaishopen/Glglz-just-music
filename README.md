@@ -126,9 +126,12 @@ you can copy the resulting `SPOTIFY_REFRESH_TOKEN` to the Pi afterwards):
 node scripts/get-token.js
 ```
 
+The script starts a temporary local server on port 8888, opens the Spotify auth
+page, and captures the callback automatically.
+
 1. Open the printed URL in a browser.
-2. Click "Agree".
-3. The token is printed in your terminal.
+2. Click "Agree". Spotify will redirect back to `localhost:8888/callback`.
+3. The script captures the code and prints your token — no copy-paste needed.
 4. Copy the `SPOTIFY_REFRESH_TOKEN=...` line into your `.env` file on the Pi.
 
 > **Required scopes** (already configured in `get-token.js`):
