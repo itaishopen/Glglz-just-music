@@ -8,7 +8,6 @@ const scraper = require('./scraper');
 const spotify = require('./spotify');
 const youtube = require('./youtube');
 const state   = require('./state');
-const ignore  = require('./ignore');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,14 +35,7 @@ async function tick() {
     return;
   }
 
-  // 2. Check ignore list (data/ignore-words.txt) — re-read on every tick so
-  //    the user can add words without restarting the script.
-  if (ignore.shouldIgnore(currentSong)) {
-    state.setLastSong(normalized); // prevent repeated log spam on the same ignored title
-    return;
-  }
-
-  // 3. Skip if same song as last cycle
+  // 2. Skip if same song as last cycle
   const lastSong = state.getLastSong();
   if (normalized === lastSong) {
     logger.info('Same song still playing — no action needed');
@@ -52,7 +44,7 @@ async function tick() {
 
   logger.info(`New song detected (was: "${lastSong ?? 'none'}")`);
 
-  // 5. Search Spotify
+  // 3. Search Spotify
   let track;
   try {
     track = await spotify.searchTrack(currentSong);
