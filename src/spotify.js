@@ -267,7 +267,7 @@ function pickBestMatch(tracks, rawQuery) {
     }
 
     // Popularity as a tiebreaker (0-100 -> 0-5 points)
-    score += track.popularity / 20;
+    score += (track.popularity ?? 0) / 20;
 
     if (score > bestScore) {
       bestScore = score;
