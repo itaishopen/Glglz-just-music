@@ -36,10 +36,9 @@ async function tick() {
     return;
   }
 
-  // 2. Check ignore list (data/ignore-words.txt) — re-read on every tick so
-  //    the user can add words without restarting the script.
+  // 2. Double-check against ignore list (data/ignore-words.txt)
   if (ignore.shouldIgnore(currentSong)) {
-    state.setLastSong(normalized); // prevent repeated log spam on the same ignored title
+    state.setLastSong(normalized);
     return;
   }
 
@@ -52,7 +51,7 @@ async function tick() {
 
   logger.info(`New song detected (was: "${lastSong ?? 'none'}")`);
 
-  // 5. Search Spotify
+  // 4. Search Spotify
   let track;
   try {
     track = await spotify.searchTrack(currentSong);

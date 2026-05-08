@@ -5,3 +5,6 @@
 # - Changes take effect on the next check — no restart needed
 
 גלגלץ
+גלגלצ
+פרומו
+האזנה מודרכת
