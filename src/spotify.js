@@ -156,12 +156,13 @@ async function searchTrack(query) {
   const dash = query.indexOf(' - ');
   let primaryQuery;
 
-  // Whitelist: keep only ASCII printable (0x20-0x7E) and Latin-extended
-  // (accented chars like é, ü, ñ). Everything else — invisible Unicode,
-  // RTL/LTR marks, zero-width spaces, Hebrew, etc. — is stripped.
-  // Then additionally strip Spotify query operators and the " - " separator.
+  // Strip only specific invisible/control chars that cause Spotify 400 errors:
+  // U+0000-001F (ASCII ctrl), U+200B-200F (ZWS/ZWJ/LRM/RLM),
+  // U+202A-202E (directional marks), U+FEFF (BOM).
+  // Hebrew, Arabic, and all other visible scripts are kept intact so
+  // non-Latin songs can be searched on Spotify.
   const stripOps = (s) => s
-    .replace(/[^\x20-\x7E\u00C0-\u024F]/g, '')
+    .replace(/[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\uFEFF]/g, '')
     .replace(/\s*\([^)]*\)/g, '')
     .replace(/,/g, ' ')
     .replace(/['"()\[\]{}!?:]/g, '')
