@@ -147,15 +147,16 @@ async function searchTrack(query) {
   const dash = query.indexOf(' - ');
   let primaryQuery;
 
-  // Remove characters Spotify's query parser treats as operators.
-  // - ​-‏: zero-width space / joining chars
-  // - ‪-‮: directional embedding/override marks
-  // - ﻿: BOM / zero-width no-break space
-  // These arrive invisibly from the Hebrew radio page and cause 400 errors.
+  // Whitelist: keep only ASCII printable (0x20-0x7E) and Latin-extended
+  // (accented chars like é, ü, ñ). Everything else — invisible Unicode,
+  // RTL/LTR marks, zero-width spaces, Hebrew, etc. — is stripped.
+  // Then additionally strip Spotify query operators and the " - " separator.
   const stripOps = (s) => s
-    .replace(/[​-‏‪-‮﻿]/g, '')
+    .replace(/[^\x20-\x7E\u00C0-\u024F]/g, '')
     .replace(/\s*\([^)]*\)/g, '')
+    .replace(/,/g, ' ')
     .replace(/['"()\[\]{}!?:]/g, '')
+    .replace(/\s+-\s+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -193,16 +194,26 @@ async function searchTrack(query) {
     return pickBestMatch(data.tracks.items, query);
   }
 
-  // Fallback: plain query (handles edge cases where field filter is too strict or rejected)
-  const plainQuery = stripOps(query);
+  // Fallback: plain keyword query — title + first artist, all operators stripped.
+  // Using cleanTitle+cleanArtist (already computed above) avoids commas, hyphens,
+  // and multi-artist separators that cause 400s on the raw string.
+  const plainQuery = dash > 0
+    ? stripOps(`${query.slice(dash + 3)} ${query.slice(0, dash).split(/\s*[,&\/]\s*|\s+feat\.?\s+/i)[0]}`)
+    : primaryQuery;
+
   if (plainQuery !== primaryQuery) {
-    logger.debug(`[spotify] No results with field filter, trying plain query: "${plainQuery}"`);
-    const fallback = await apiRequest(
-      'GET',
-      `/search?q=${encodeURIComponent(plainQuery)}&type=track&limit=5&market=IL`
-    );
-    if (fallback?.tracks?.items?.length) {
-      return pickBestMatch(fallback.tracks.items, query);
+    logger.debug(`[spotify] Trying plain query: "${plainQuery}"`);
+    try {
+      const fallback = await apiRequest(
+        'GET',
+        `/search?q=${encodeURIComponent(plainQuery)}&type=track&limit=5&market=IL`
+      );
+      if (fallback?.tracks?.items?.length) {
+        return pickBestMatch(fallback.tracks.items, query);
+      }
+    } catch (err) {
+      if (!err.message.includes('400')) throw err;
+      logger.warn(`[spotify] Plain query also returned 400: "${plainQuery}"`);
     }
   }
 
