@@ -372,10 +372,44 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Verify Spotify credentials and playlist access at startup.
+ * Logs the authenticated user and playlist name, or a clear error if anything
+ * is wrong (bad token, wrong playlist ID, missing scopes, wrong account).
+ */
+async function checkAccess() {
+  let me;
+  try {
+    me = await apiRequest('GET', '/me');
+    logger.info(`[spotify] Authenticated as: ${me.display_name || me.id} (${me.email || me.id})`);
+  } catch (err) {
+    logger.error(`[spotify] Token check failed: ${err.message}`);
+    logger.error('[spotify]   → Re-run  node scripts/get-token.js  and update SPOTIFY_REFRESH_TOKEN in .env');
+    return;
+  }
+
+  try {
+    const pl = await apiRequest('GET', `/playlists/${config.spotify.playlistId}?fields=name,owner`);
+    logger.info(`[spotify] Playlist access OK: "${pl.name}" (owned by ${pl.owner?.display_name || pl.owner?.id})`);
+  } catch (err) {
+    if (err.message.includes('403') || err.message.includes('404')) {
+      logger.error(`[spotify] Cannot access playlist ID "${config.spotify.playlistId}": ${err.message}`);
+      logger.error('[spotify]   → Check SPOTIFY_PLAYLIST_ID in .env.');
+      logger.error('[spotify]     To find it: open the playlist in Spotify → Share → Copy link.');
+      logger.error('[spotify]     The ID is the part after /playlist/ and before the ?');
+      logger.error(`[spotify]     Example: open.spotify.com/playlist/3RCL6s6xJasw4SydPI1j09 → ID is 3RCL6s6xJasw4SydPI1j09`);
+      logger.error(`[spotify]     Also confirm the playlist belongs to account: ${me.display_name || me.id}`);
+    } else {
+      logger.error(`[spotify] Playlist check failed: ${err.message}`);
+    }
+  }
+}
+
 module.exports = {
   searchTrack,
   addTrackToPlaylist,
   getPlaylistTracks,
   trimPlaylist,
   isTrackInPlaylist,
+  checkAccess,
 };

@@ -172,6 +172,9 @@ async function main() {
   logger.info(`  YouTube playlist : ${config.youtube ? config.youtube.playlistId : 'disabled'}`);
   logger.info('════════════════════════════════════════════════════════');
 
+  // Verify Spotify credentials and playlist access before the first tick.
+  await spotify.checkAccess();
+
   // Run the first tick immediately, then wait between subsequent ticks.
   while (true) {
     try {
