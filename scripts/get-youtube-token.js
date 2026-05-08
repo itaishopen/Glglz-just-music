@@ -1,129 +1,117 @@
 #!/usr/bin/env node
 /**
- * One-time helper to obtain a YouTube (Google) refresh token via OAuth 2.0.
+ * One-time helper to obtain a YouTube (Google) refresh token.
  *
- * Google explicitly allows http://localhost redirect URIs as an exception
- * to their HTTPS requirement — no certificate needed.
+ * No local server or certificate needed.
  *
- * Prerequisites:
- *   1. Create a Google Cloud project and enable YouTube Data API v3.
- *   2. Create an OAuth 2.0 "Web application" credential.
- *   3. Add  http://localhost:8889/callback  as an Authorised Redirect URI.
- *   4. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET in .env.
- *
- * Usage:
- *   node scripts/get-youtube-token.js
- *   → Open the printed URL, authorise, copy YOUTUBE_REFRESH_TOKEN into .env.
+ * How it works:
+ *   1. Register  https://localhost:8889/callback  in Google Cloud Console.
+ *   2. This script prints an auth URL.  Open it in your browser and log in.
+ *   3. Google redirects your browser to https://localhost:8889/callback?code=…
+ *      The browser shows "This site can't be reached" — that is expected.
+ *   4. Copy the full URL from the browser address bar and paste it here.
+ *   5. The script extracts the code, exchanges it, and prints the refresh token.
  */
 
 'use strict';
 
 require('dotenv').config();
 
-const http        = require('http');
-const https       = require('https');
-const crypto      = require('crypto');
-const querystring = require('querystring');
+const https    = require('https');
+const crypto   = require('crypto');
+const qs       = require('querystring');
+const readline = require('readline');
 
 const CLIENT_ID     = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
-const REDIRECT_URI  = 'http://localhost:8889/callback';
-const PORT          = 8889;
+const REDIRECT_URI  = 'https://localhost:8889/callback';
 
 const SCOPES = 'https://www.googleapis.com/auth/youtube';
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error(
-    '\n❌  YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set.\n' +
-    '    Copy .env.example to .env and fill in those values first.\n'
+    '\n❌  YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set in .env first.\n'
   );
   process.exit(1);
 }
 
 const state   = crypto.randomBytes(16).toString('hex');
-const authUrl =
-  'https://accounts.google.com/o/oauth2/v2/auth?' +
-  querystring.stringify({
-    client_id:     CLIENT_ID,
-    redirect_uri:  REDIRECT_URI,
-    response_type: 'code',
-    scope:         SCOPES,
-    access_type:   'offline',
-    prompt:        'consent',
-    state,
-  });
+const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + qs.stringify({
+  client_id:     CLIENT_ID,
+  redirect_uri:  REDIRECT_URI,
+  response_type: 'code',
+  scope:         SCOPES,
+  access_type:   'offline',
+  prompt:        'consent',
+  state,
+});
 
 console.log('\n══════════════════════════════════════════════════');
 console.log(' YouTube Refresh Token Helper');
 console.log('══════════════════════════════════════════════════\n');
+console.log('Make sure your Google Cloud Console has this redirect URI saved:');
+console.log('  https://localhost:8889/callback\n');
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
-console.log('Step 2 — Sign in and click "Allow"');
-console.log('Step 3 — The token will print here automatically.\n');
+console.log('Step 2 — Log in and click "Allow"');
+console.log('Step 3 — Your browser will show "This site can\'t be reached" — that\'s expected.');
+console.log('Step 4 — Copy the FULL URL from the browser address bar (starts with https://localhost…)\n');
 
-const server = http.createServer(async (req, res) => {
-  if (!req.url?.startsWith('/callback')) return;
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  const params        = new URLSearchParams(req.url.split('?')[1] || '');
-  const code          = params.get('code');
-  const returnedState = params.get('state');
-  const error         = params.get('error');
+rl.question('Paste the full redirect URL here: ', async (input) => {
+  rl.close();
+  input = input.trim();
+
+  let url;
+  try {
+    url = new URL(input);
+  } catch {
+    console.error('\n❌  That does not look like a valid URL. Please try again.\n');
+    process.exit(1);
+  }
+
+  const code          = url.searchParams.get('code');
+  const returnedState = url.searchParams.get('state');
+  const error         = url.searchParams.get('error');
 
   if (error) {
-    res.writeHead(400, { 'Content-Type': 'text/plain' });
-    res.end(`Authorization error: ${error}`);
-    console.error(`\n❌  Authorization denied: ${error}\n`);
-    server.close();
-    return;
+    console.error(`\n❌  Google returned an error: ${error}\n`);
+    process.exit(1);
+  }
+
+  if (!code) {
+    console.error('\n❌  No "code" found in the URL. Make sure you copied the full redirect URL.\n');
+    process.exit(1);
   }
 
   if (returnedState !== state) {
-    res.writeHead(400, { 'Content-Type': 'text/plain' });
-    res.end('State mismatch. Please try again.');
-    server.close();
-    return;
+    console.error('\n❌  State mismatch — the URL may be from a previous session. Run the script again.\n');
+    process.exit(1);
   }
 
   try {
     const tokens = await exchangeCode(code);
-
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(
-      '<body style="font-family:sans-serif;padding:40px">' +
-      '<h2>✅ Success!</h2><p>You can close this tab and check your terminal.</p>' +
-      '</body>'
-    );
-
-    console.log('══════════════════════════════════════════════════');
+    console.log('\n══════════════════════════════════════════════════');
     console.log('✅  SUCCESS — add this line to your .env file:');
     console.log('══════════════════════════════════════════════════\n');
     console.log(`YOUTUBE_REFRESH_TOKEN=${tokens.refresh_token}\n`);
 
     if (!tokens.refresh_token) {
       console.warn(
-        '⚠️  No refresh_token in response.\n' +
-        '   Revoke the app at https://myaccount.google.com/permissions\n' +
-        '   and re-run this script.\n'
+        '⚠️  No refresh_token returned. Revoke the app at\n' +
+        '    https://myaccount.google.com/permissions and re-run this script.\n'
       );
     }
   } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end(`Token exchange failed: ${err.message}`);
     console.error(`\n❌  Token exchange failed: ${err.message}\n`);
+    process.exit(1);
   }
-
-  server.close();
 });
-
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Listening on http://localhost:${PORT}/callback\n`);
-});
-
-// ── Token exchange ────────────────────────────────────────────────────────────
 
 function exchangeCode(code) {
   return new Promise((resolve, reject) => {
-    const body = querystring.stringify({
+    const body = qs.stringify({
       code,
       client_id:     CLIENT_ID,
       client_secret: CLIENT_SECRET,
@@ -131,28 +119,24 @@ function exchangeCode(code) {
       grant_type:    'authorization_code',
     });
 
-    const req = https.request(
-      {
-        hostname: 'oauth2.googleapis.com',
-        path:     '/token',
-        method:   'POST',
-        headers:  {
-          'Content-Type':   'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(body),
-        },
+    const req = https.request({
+      hostname: 'oauth2.googleapis.com',
+      path:     '/token',
+      method:   'POST',
+      headers:  {
+        'Content-Type':   'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
       },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.error) reject(new Error(`${json.error}: ${json.error_description}`));
-            else            resolve(json);
-          } catch (e) { reject(e); }
-        });
-      }
-    );
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          json.error ? reject(new Error(`${json.error}: ${json.error_description}`)) : resolve(json);
+        } catch (e) { reject(e); }
+      });
+    });
     req.on('error', reject);
     req.write(body);
     req.end();

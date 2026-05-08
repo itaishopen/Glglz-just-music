@@ -1,33 +1,31 @@
 #!/usr/bin/env node
 /**
- * One-time helper to obtain a Spotify refresh token via the OAuth 2.0
- * Authorization Code flow.
+ * One-time helper to obtain a Spotify refresh token.
  *
- * Spotify explicitly allows http://localhost redirect URIs as an exception
- * to their HTTPS requirement — no certificate needed.
+ * No local server or certificate needed.
  *
- * Prerequisites:
- *   1. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env
- *   2. In your Spotify Developer Dashboard add the redirect URI exactly as:
- *        http://localhost:8888/callback
- *   3. Run:  node scripts/get-token.js
- *   4. Open the printed URL in a browser and authorise the app
- *   5. Copy the SPOTIFY_REFRESH_TOKEN printed in the terminal into your .env
+ * How it works:
+ *   1. Register  https://localhost:8888/callback  in the Spotify dashboard
+ *      (Spotify accepts HTTPS localhost — HTTP is what it blocks).
+ *   2. This script prints an auth URL.  Open it in your browser and log in.
+ *   3. Spotify redirects your browser to https://localhost:8888/callback?code=…
+ *      The browser shows "This site can't be reached" — that is expected.
+ *   4. Copy the full URL from the browser address bar and paste it here.
+ *   5. The script extracts the code, exchanges it, and prints the refresh token.
  */
 
 'use strict';
 
 require('dotenv').config();
 
-const http        = require('http');
-const https       = require('https');
-const crypto      = require('crypto');
-const querystring = require('querystring');
+const https    = require('https');
+const crypto   = require('crypto');
+const qs       = require('querystring');
+const readline = require('readline');
 
 const CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI  = 'http://localhost:8888/callback';
-const PORT          = 8888;
+const REDIRECT_URI  = 'https://localhost:8888/callback';
 
 const SCOPES = [
   'playlist-modify-public',
@@ -38,122 +36,107 @@ const SCOPES = [
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error(
-    '\n❌  SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set.\n' +
-    '    Copy .env.example to .env and fill in those two values first.\n'
+    '\n❌  SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in .env first.\n'
   );
   process.exit(1);
 }
 
 const state   = crypto.randomBytes(16).toString('hex');
-const authUrl =
-  'https://accounts.spotify.com/authorize?' +
-  querystring.stringify({
-    response_type: 'code',
-    client_id:     CLIENT_ID,
-    scope:         SCOPES,
-    redirect_uri:  REDIRECT_URI,
-    state,
-  });
+const authUrl = 'https://accounts.spotify.com/authorize?' + qs.stringify({
+  response_type: 'code',
+  client_id:     CLIENT_ID,
+  scope:         SCOPES,
+  redirect_uri:  REDIRECT_URI,
+  state,
+});
 
 console.log('\n══════════════════════════════════════════════════');
 console.log(' Spotify Refresh Token Helper');
 console.log('══════════════════════════════════════════════════\n');
+console.log('Make sure your Spotify Developer Dashboard has this redirect URI saved:');
+console.log('  https://localhost:8888/callback\n');
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
-console.log('Step 2 — Click "Agree" / "Authorise"');
-console.log('Step 3 — The token will print here automatically.\n');
+console.log('Step 2 — Log in and click "Agree"');
+console.log('Step 3 — Your browser will show "This site can\'t be reached" — that\'s expected.');
+console.log('Step 4 — Copy the FULL URL from the browser address bar (starts with https://localhost…)\n');
 
-const server = http.createServer(async (req, res) => {
-  if (!req.url?.startsWith('/callback')) return;
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  const params        = new URLSearchParams(req.url.split('?')[1] || '');
-  const code          = params.get('code');
-  const returnedState = params.get('state');
-  const error         = params.get('error');
+rl.question('Paste the full redirect URL here: ', async (input) => {
+  rl.close();
+  input = input.trim();
+
+  let url;
+  try {
+    url = new URL(input);
+  } catch {
+    console.error('\n❌  That does not look like a valid URL. Please try again.\n');
+    process.exit(1);
+  }
+
+  const code          = url.searchParams.get('code');
+  const returnedState = url.searchParams.get('state');
+  const error         = url.searchParams.get('error');
 
   if (error) {
-    res.writeHead(400, { 'Content-Type': 'text/plain' });
-    res.end(`Authorization error: ${error}`);
-    console.error(`\n❌  Authorization denied: ${error}\n`);
-    server.close();
-    return;
+    console.error(`\n❌  Spotify returned an error: ${error}\n`);
+    process.exit(1);
+  }
+
+  if (!code) {
+    console.error('\n❌  No "code" found in the URL. Make sure you copied the full redirect URL.\n');
+    process.exit(1);
   }
 
   if (returnedState !== state) {
-    res.writeHead(400, { 'Content-Type': 'text/plain' });
-    res.end('State mismatch — possible CSRF. Please try again.');
-    server.close();
-    return;
+    console.error('\n❌  State mismatch — the URL may be from a previous session. Run the script again.\n');
+    process.exit(1);
   }
 
   try {
     const tokens = await exchangeCode(code);
-
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(
-      '<body style="font-family:sans-serif;padding:40px">' +
-      '<h2>✅ Success!</h2><p>You can close this tab and check your terminal.</p>' +
-      '</body>'
-    );
-
-    console.log('══════════════════════════════════════════════════');
+    console.log('\n══════════════════════════════════════════════════');
     console.log('✅  SUCCESS — add this line to your .env file:');
     console.log('══════════════════════════════════════════════════\n');
     console.log(`SPOTIFY_REFRESH_TOKEN=${tokens.refresh_token}\n`);
 
     if (!tokens.refresh_token) {
       console.warn(
-        '⚠️  No refresh_token returned. Try revoking access in\n' +
-        '    https://www.spotify.com/account/apps and re-running this script.\n'
+        '⚠️  No refresh_token returned. Revoke the app at\n' +
+        '    https://www.spotify.com/account/apps and re-run this script.\n'
       );
     }
   } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end(`Token exchange failed: ${err.message}`);
     console.error(`\n❌  Token exchange failed: ${err.message}\n`);
+    process.exit(1);
   }
-
-  server.close();
 });
-
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Listening on http://localhost:${PORT}/callback\n`);
-});
-
-// ── Token exchange ────────────────────────────────────────────────────────────
 
 function exchangeCode(code) {
   return new Promise((resolve, reject) => {
     const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-    const body = querystring.stringify({
-      grant_type:   'authorization_code',
-      code,
-      redirect_uri: REDIRECT_URI,
-    });
+    const body = qs.stringify({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI });
 
-    const req = https.request(
-      {
-        hostname: 'accounts.spotify.com',
-        path:     '/api/token',
-        method:   'POST',
-        headers:  {
-          Authorization:    `Basic ${credentials}`,
-          'Content-Type':   'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(body),
-        },
+    const req = https.request({
+      hostname: 'accounts.spotify.com',
+      path:     '/api/token',
+      method:   'POST',
+      headers:  {
+        Authorization:    `Basic ${credentials}`,
+        'Content-Type':   'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
       },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.error) reject(new Error(`${json.error}: ${json.error_description}`));
-            else            resolve(json);
-          } catch (e) { reject(e); }
-        });
-      }
-    );
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          json.error ? reject(new Error(`${json.error}: ${json.error_description}`)) : resolve(json);
+        } catch (e) { reject(e); }
+      });
+    });
     req.on('error', reject);
     req.write(body);
     req.end();
