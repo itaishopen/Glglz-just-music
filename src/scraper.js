@@ -70,8 +70,12 @@ async function getNowPlaying() {
 
     logger.debug(`Navigating to: ${config.scraper.url}`);
 
+    // 'domcontentloaded' fires as soon as the HTML is parsed — before all XHR/
+    // fetch requests settle.  Radio sites poll continuously for now-playing data
+    // so 'networkidle' never triggers and causes a timeout.  The actual song
+    // element is found afterwards by waitForSelector inside extractNowPlaying().
     await page.goto(config.scraper.url, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: config.scraper.timeoutMs,
     });
 

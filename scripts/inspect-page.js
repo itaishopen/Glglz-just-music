@@ -40,7 +40,7 @@ const LABEL  = 'מתנגן כעת';
     browser = await chromium.launch(launchOptions);
     const page = await browser.newPage();
 
-    await page.goto(config.scraper.url, { waitUntil: 'networkidle', timeout: 45_000 });
+    await page.goto(config.scraper.url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
 
     // Screenshot
     const screenshotPath = path.join(__dirname, '..', 'data', 'inspect-screenshot.png');
