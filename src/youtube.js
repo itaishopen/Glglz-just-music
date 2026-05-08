@@ -17,16 +17,29 @@ async function getAccessToken() {
 
   logger.debug('[youtube] Refreshing access token');
 
-  const response = await axios.post(
-    TOKEN_URL,
-    new URLSearchParams({
-      client_id:     config.youtube.clientId,
-      client_secret: config.youtube.clientSecret,
-      refresh_token: config.youtube.refreshToken,
-      grant_type:    'refresh_token',
-    }),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10_000 }
-  );
+  let response;
+  try {
+    response = await axios.post(
+      TOKEN_URL,
+      new URLSearchParams({
+        client_id:     config.youtube.clientId,
+        client_secret: config.youtube.clientSecret,
+        refresh_token: config.youtube.refreshToken,
+        grant_type:    'refresh_token',
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10_000 }
+    );
+  } catch (err) {
+    const body = err.response?.data;
+    if (body?.error === 'invalid_grant') {
+      throw new Error(
+        'YouTube refresh token is invalid or expired.\n' +
+        '  → Run  node scripts/get-youtube-token.js  on your laptop to get a new token,\n' +
+        '    then update YOUTUBE_REFRESH_TOKEN in your .env file on the Pi.'
+      );
+    }
+    throw err;
+  }
 
   _accessToken    = response.data.access_token;
   _tokenExpiresAt = Date.now() + response.data.expires_in * 1000;

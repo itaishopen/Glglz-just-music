@@ -25,20 +25,33 @@ async function getAccessToken() {
     `${config.spotify.clientId}:${config.spotify.clientSecret}`
   ).toString('base64');
 
-  const response = await axios.post(
-    TOKEN_URL,
-    new URLSearchParams({
-      grant_type:    'refresh_token',
-      refresh_token: config.spotify.refreshToken,
-    }),
-    {
-      headers: {
-        Authorization:  `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      timeout: 10_000,
+  let response;
+  try {
+    response = await axios.post(
+      TOKEN_URL,
+      new URLSearchParams({
+        grant_type:    'refresh_token',
+        refresh_token: config.spotify.refreshToken,
+      }),
+      {
+        headers: {
+          Authorization:  `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        timeout: 10_000,
+      }
+    );
+  } catch (err) {
+    const body = err.response?.data;
+    if (body?.error === 'invalid_grant') {
+      throw new Error(
+        'Spotify refresh token is invalid or expired.\n' +
+        '  → Run  node scripts/get-token.js  on your laptop to get a new token,\n' +
+        '    then update SPOTIFY_REFRESH_TOKEN in your .env file on the Pi.'
+      );
     }
-  );
+    throw err;
+  }
 
   _accessToken    = response.data.access_token;
   _tokenExpiresAt = Date.now() + response.data.expires_in * 1000;
