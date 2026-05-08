@@ -34,8 +34,7 @@ const LABEL  = 'מתנגן כעת';
     if (config.scraper.chromiumPath) {
       launchOptions.executablePath = config.scraper.chromiumPath;
     } else {
-      const { executablePath } = require('playwright-core/lib/server');
-      launchOptions.executablePath = executablePath('chromium');
+      launchOptions.executablePath = chromium.executablePath();
     }
 
     browser = await chromium.launch(launchOptions);

@@ -41,17 +41,9 @@ async function getNowPlaying() {
     if (config.scraper.chromiumPath) {
       launchOptions.executablePath = config.scraper.chromiumPath;
     } else {
-      // playwright-core requires an explicit path.  If CHROMIUM_PATH is not set,
-      // attempt the standard locations installed by `npx playwright install chromium`.
-      const { executablePath } = require('playwright-core/lib/server');
-      try {
-        launchOptions.executablePath = executablePath('chromium');
-      } catch {
-        throw new Error(
-          'No Chromium found. Either set CHROMIUM_PATH=/usr/bin/chromium-browser ' +
-          'or run: npx playwright install chromium'
-        );
-      }
+      // chromium.executablePath() is the public Playwright API — returns the path
+      // of the browser downloaded by `npx playwright install chromium`.
+      launchOptions.executablePath = chromium.executablePath();
     }
 
     browser = await chromium.launch(launchOptions);
