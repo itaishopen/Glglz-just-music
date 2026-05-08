@@ -153,8 +153,11 @@ async function searchTrack(query) {
     // Spotify's artist: filter accepts only a single artist name.
     // Split on comma, ampersand, slash, or "feat." and take the first one.
     const primaryArtist = artist.split(/\s*[,&\/]\s*|\s+feat\.?\s+/i)[0].trim();
-    primaryQuery = `${title} artist:${primaryArtist}`;
-    logger.debug(`[spotify] Parsed → artist="${artist}", primaryArtist="${primaryArtist}", title="${title}"`);
+    // Strip parenthetical qualifiers like (Live), (Remix) — parentheses are
+    // Spotify query operators and cause 400 errors in field-filter queries.
+    const cleanTitle = title.replace(/\s*\([^)]*\)/g, '').trim();
+    primaryQuery = `${cleanTitle} artist:${primaryArtist}`;
+    logger.debug(`[spotify] Parsed → artist="${artist}", primaryArtist="${primaryArtist}", title="${title}", cleanTitle="${cleanTitle}"`);
   } else {
     primaryQuery = query;
   }
