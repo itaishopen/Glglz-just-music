@@ -2,33 +2,31 @@
 /**
  * One-time helper to obtain a Spotify refresh token.
  *
- * No local server or certificate needed.
- *
  * How it works:
- *   1. Register  https://httpbin.org/get  in the Spotify Developer Dashboard.
- *      (httpbin.org is a trusted public HTTP-testing service — real HTTPS,
- *      so Spotify accepts it.  The auth code it receives is single-use and
- *      expires within seconds, so it is safe to use for a setup script.)
- *   2. This script prints an auth URL.  Open it in your browser and log in.
- *   3. Click "Agree".  Your browser will redirect to httpbin.org and show
- *      a JSON page — that is expected and means it worked.
- *   4. Copy the FULL URL from the browser address bar.  It will look like:
- *        https://httpbin.org/get?code=AQDxxx...&state=yyy...
- *   5. Paste that URL here.  The script extracts the code and gets your token.
+ *   1. This script starts a temporary local HTTP server on port 8888.
+ *   2. It prints an auth URL — open it in your browser and log in.
+ *   3. Click "Agree". Spotify redirects back to localhost:8888/callback.
+ *   4. The script captures the code, exchanges it for tokens, and prints
+ *      the SPOTIFY_REFRESH_TOKEN line to add to your .env file.
+ *   5. The local server shuts down automatically.
+ *
+ * Make sure http://localhost:8888/callback is listed as a Redirect URI in
+ * your Spotify Developer Dashboard app settings before running this script.
  */
 
 'use strict';
 
 require('dotenv').config();
 
-const https    = require('https');
-const crypto   = require('crypto');
-const qs       = require('querystring');
-const readline = require('readline');
+const http   = require('http');
+const https  = require('https');
+const crypto = require('crypto');
+const qs     = require('querystring');
 
 const CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI  = 'https://httpbin.org/get';
+const PORT          = 8888;
+const REDIRECT_URI  = `http://localhost:${PORT}/callback`;
 
 const SCOPES = [
   'playlist-modify-public',
@@ -58,51 +56,63 @@ console.log('\n═════════════════════�
 console.log(' Spotify Refresh Token Helper');
 console.log('══════════════════════════════════════════════════\n');
 console.log('Make sure your Spotify Developer Dashboard has this redirect URI saved:');
-console.log('  https://httpbin.org/get\n');
+console.log(`  ${REDIRECT_URI}\n`);
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
 console.log('Step 2 — Log in and click "Agree"');
-console.log('Step 3 — Your browser will load a JSON page on httpbin.org — that\'s expected.');
-console.log('Step 4 — You can paste EITHER:');
-console.log('           a) The full URL from the address bar: https://httpbin.org/get?code=AQC...');
-console.log('           b) Just the "code" value shown in the JSON on the page\n');
+console.log('Step 3 — The browser will redirect to localhost. This script will capture');
+console.log('         the code automatically and print your refresh token.\n');
+console.log('Waiting for Spotify to redirect to localhost…\n');
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const server = http.createServer(async (req, res) => {
+  let url;
+  try { url = new URL(req.url, `http://localhost:${PORT}`); } catch {
+    res.writeHead(400);
+    res.end('Bad request');
+    return;
+  }
 
-rl.question('Paste the URL or code here: ', async (input) => {
-  rl.close();
-  input = input.trim();
+  if (url.pathname !== '/callback') {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
 
-  let code;
+  const error         = url.searchParams.get('error');
+  const returnedState = url.searchParams.get('state');
+  const code          = url.searchParams.get('code');
 
-  if (input.startsWith('http')) {
-    // Full URL pasted — extract code and validate state
-    let url;
-    try { url = new URL(input); } catch {
-      console.error('\n❌  That does not look like a valid URL. Please try again.\n');
-      process.exit(1);
-    }
+  if (error) {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(`Spotify returned an error: ${error}\nYou can close this tab.`);
+    server.close();
+    console.error(`\n❌  Spotify returned an error: ${error}\n`);
+    process.exit(1);
+  }
 
-    const error         = url.searchParams.get('error');
-    const returnedState = url.searchParams.get('state');
-    code                = url.searchParams.get('code');
+  if (returnedState !== state) {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('State mismatch — possible CSRF. Please run the script again.');
+    server.close();
+    console.error('\n❌  State mismatch — possible CSRF. Run the script again.\n');
+    process.exit(1);
+  }
 
-    if (error) { console.error(`\n❌  Spotify returned an error: ${error}\n`); process.exit(1); }
-    if (!code)  { console.error('\n❌  No "code" in URL. Make sure you copied the full redirect URL.\n'); process.exit(1); }
-
-    if (returnedState !== state) {
-      console.error('\n❌  State mismatch — URL may be from a previous session. Run the script again.\n');
-      process.exit(1);
-    }
-  } else {
-    // Bare code pasted directly
-    code = input;
-    if (!code) { console.error('\n❌  Nothing was pasted. Please try again.\n'); process.exit(1); }
+  if (!code) {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('No code returned. Please run the script again.');
+    server.close();
+    console.error('\n❌  No code in callback URL.\n');
+    process.exit(1);
   }
 
   try {
     const tokens = await exchangeCode(code);
-    console.log('\n══════════════════════════════════════════════════');
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('✅  Authorization successful! You can close this tab and check your terminal.');
+    server.close();
+
+    console.log('══════════════════════════════════════════════════');
     console.log('✅  SUCCESS — add this line to your .env file:');
     console.log('══════════════════════════════════════════════════\n');
     console.log(`SPOTIFY_REFRESH_TOKEN=${tokens.refresh_token}\n`);
@@ -114,9 +124,25 @@ rl.question('Paste the URL or code here: ', async (input) => {
       );
     }
   } catch (err) {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(`Token exchange failed: ${err.message}`);
+    server.close();
     console.error(`\n❌  Token exchange failed: ${err.message}\n`);
     process.exit(1);
   }
+});
+
+server.listen(PORT, '127.0.0.1', () => {});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `\n❌  Port ${PORT} is already in use. Stop whatever is running on it and try again.\n`
+    );
+  } else {
+    console.error(`\n❌  Server error: ${err.message}\n`);
+  }
+  process.exit(1);
 });
 
 function exchangeCode(code) {
