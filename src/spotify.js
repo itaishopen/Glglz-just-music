@@ -101,6 +101,14 @@ async function apiRequest(method, url, data = null, maxRetries = 3) {
           }
         }
 
+        if (status === 403) {
+          throw new Error(
+            'Spotify API 403 Forbidden — your token lacks playlist scopes.\n' +
+            '  → Re-run  node scripts/get-token.js  on your laptop to get a new token,\n' +
+            '    then update SPOTIFY_REFRESH_TOKEN in your .env file on the Pi.'
+          );
+        }
+
         if (status === 429) {
           const retryAfter = parseInt(headers['retry-after'] || '10', 10);
           logger.warn(`[spotify] Rate limited (429). Waiting ${retryAfter}s before retry ${attempt}/${maxRetries}`);
@@ -169,10 +177,18 @@ async function searchTrack(query) {
     const primaryArtist = artist.split(/\s*[,&\/]\s*|\s+feat\.?\s+/i)[0].trim();
     const cleanTitle  = stripOps(title);
     const cleanArtist = stripOps(primaryArtist);
+    if (!cleanTitle) {
+      logger.debug(`[spotify] Skipping — title is empty after sanitising (non-Latin script?): "${query}"`);
+      return null;
+    }
     primaryQuery = `${cleanTitle} artist:${cleanArtist}`;
     logger.debug(`[spotify] Parsed → artist="${artist}", cleanArtist="${cleanArtist}", title="${title}", cleanTitle="${cleanTitle}"`);
   } else {
     primaryQuery = stripOps(query);
+    if (!primaryQuery) {
+      logger.debug(`[spotify] Skipping — query is empty after sanitising: "${query}"`);
+      return null;
+    }
   }
 
   // Attempt field-filter query; if Spotify rejects it (400) fall straight
