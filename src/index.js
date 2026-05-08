@@ -91,12 +91,11 @@ async function tick() {
     return;
   }
 
-  // 8. Trim playlist to configured max size
+  // 8. Trim oldest song if playlist exceeds max size
   try {
     await spotify.trimPlaylist(config.monitor.maxPlaylistSize);
   } catch (err) {
     logger.error(`[spotify] Trim failed: ${err.message}`);
-    // Non-fatal — the track was added; just log and continue
   }
 
   // 9. YouTube playlist (optional — skipped if YOUTUBE_* vars are not set)
