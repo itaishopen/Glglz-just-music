@@ -5,13 +5,16 @@
  * No local server or certificate needed.
  *
  * How it works:
- *   1. Register  https://localhost:8888/callback  in the Spotify dashboard
- *      (Spotify accepts HTTPS localhost — HTTP is what it blocks).
+ *   1. Register  https://httpbin.org/get  in the Spotify Developer Dashboard.
+ *      (httpbin.org is a trusted public HTTP-testing service — real HTTPS,
+ *      so Spotify accepts it.  The auth code it receives is single-use and
+ *      expires within seconds, so it is safe to use for a setup script.)
  *   2. This script prints an auth URL.  Open it in your browser and log in.
- *   3. Spotify redirects your browser to https://localhost:8888/callback?code=…
- *      The browser shows "This site can't be reached" — that is expected.
- *   4. Copy the full URL from the browser address bar and paste it here.
- *   5. The script extracts the code, exchanges it, and prints the refresh token.
+ *   3. Click "Agree".  Your browser will redirect to httpbin.org and show
+ *      a JSON page — that is expected and means it worked.
+ *   4. Copy the FULL URL from the browser address bar.  It will look like:
+ *        https://httpbin.org/get?code=AQDxxx...&state=yyy...
+ *   5. Paste that URL here.  The script extracts the code and gets your token.
  */
 
 'use strict';
@@ -25,7 +28,7 @@ const readline = require('readline');
 
 const CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI  = 'https://localhost:8888/callback';
+const REDIRECT_URI  = 'https://httpbin.org/get';
 
 const SCOPES = [
   'playlist-modify-public',
@@ -54,12 +57,12 @@ console.log('\n═════════════════════�
 console.log(' Spotify Refresh Token Helper');
 console.log('══════════════════════════════════════════════════\n');
 console.log('Make sure your Spotify Developer Dashboard has this redirect URI saved:');
-console.log('  https://localhost:8888/callback\n');
+console.log('  https://httpbin.org/get\n');
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
 console.log('Step 2 — Log in and click "Agree"');
-console.log('Step 3 — Your browser will show "This site can\'t be reached" — that\'s expected.');
-console.log('Step 4 — Copy the FULL URL from the browser address bar (starts with https://localhost…)\n');
+console.log('Step 3 — Your browser will load a JSON page on httpbin.org — that\'s expected.');
+console.log('Step 4 — Copy the FULL URL from the browser address bar (starts with https://httpbin.org/get?code=…)\n');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
