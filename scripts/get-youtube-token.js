@@ -1,36 +1,34 @@
 #!/usr/bin/env node
 /**
- * One-time helper to obtain a YouTube (Google) refresh token via OAuth 2.0
- * over HTTPS.
+ * One-time helper to obtain a YouTube (Google) refresh token via OAuth 2.0.
+ *
+ * Google explicitly allows http://localhost redirect URIs as an exception
+ * to their HTTPS requirement — no certificate needed.
  *
  * Prerequisites:
  *   1. Create a Google Cloud project and enable YouTube Data API v3.
  *   2. Create an OAuth 2.0 "Web application" credential.
- *   3. Add  https://localhost:8889/callback  as an Authorised Redirect URI.
+ *   3. Add  http://localhost:8889/callback  as an Authorised Redirect URI.
  *   4. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET in .env.
  *
  * Usage:
  *   node scripts/get-youtube-token.js
- *
- * Browser certificate warning (expected — self-signed cert):
- *   Chrome  → Advanced → Proceed to localhost (unsafe)
- *             (or type  thisisunsafe  if no link appears)
- *   Firefox → Advanced → Accept the Risk and Continue
+ *   → Open the printed URL, authorise, copy YOUTUBE_REFRESH_TOKEN into .env.
  */
 
 'use strict';
 
 require('dotenv').config();
 
+const http        = require('http');
 const https       = require('https');
 const crypto      = require('crypto');
 const querystring = require('querystring');
-const { generateCert } = require('./lib/cert');
 
 const CLIENT_ID     = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
-const REDIRECT_URI  = 'https://localhost:8889/callback';
-const PORT          = 8889;   // different from Spotify helper (8888)
+const REDIRECT_URI  = 'http://localhost:8889/callback';
+const PORT          = 8889;
 
 const SCOPES = 'https://www.googleapis.com/auth/youtube';
 
@@ -39,16 +37,6 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
     '\n❌  YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set.\n' +
     '    Copy .env.example to .env and fill in those values first.\n'
   );
-  process.exit(1);
-}
-
-// Generate a temporary self-signed cert so the local server can use HTTPS
-let sslCreds;
-try {
-  console.log('Generating self-signed certificate…');
-  sslCreds = generateCert();
-} catch (err) {
-  console.error(`\n❌  ${err.message}`);
   process.exit(1);
 }
 
@@ -71,13 +59,9 @@ console.log('══════════════════════�
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
 console.log('Step 2 — Sign in and click "Allow"');
-console.log('Step 3 — Your browser will warn about the certificate (self-signed):');
-console.log('           Chrome  → Advanced → Proceed to localhost (unsafe)');
-console.log('                     (or type  thisisunsafe  if no link appears)');
-console.log('           Firefox → Advanced → Accept the Risk and Continue');
-console.log('Step 4 — The token will print here automatically.\n');
+console.log('Step 3 — The token will print here automatically.\n');
 
-const server = https.createServer(sslCreds, async (req, res) => {
+const server = http.createServer(async (req, res) => {
   if (!req.url?.startsWith('/callback')) return;
 
   const params        = new URLSearchParams(req.url.split('?')[1] || '');
@@ -132,7 +116,7 @@ const server = https.createServer(sslCreds, async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`HTTPS server listening on https://localhost:${PORT}/callback\n`);
+  console.log(`Listening on http://localhost:${PORT}/callback\n`);
 });
 
 // ── Token exchange ────────────────────────────────────────────────────────────
