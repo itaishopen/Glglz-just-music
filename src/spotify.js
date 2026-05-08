@@ -75,13 +75,14 @@ async function apiRequest(method, url, data = null, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const token    = await getAccessToken();
+      const isWrite = /^(POST|PUT|DELETE|PATCH)$/i.test(method);
       const response = await axios({
         method,
         url: fullUrl,
         data,
         headers: {
-          Authorization:  `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
         },
         timeout: 15_000,
       });
