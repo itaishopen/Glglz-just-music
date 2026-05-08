@@ -251,8 +251,12 @@ function pickBestMatch(tracks, rawQuery) {
 
   const q     = rawQuery.toLowerCase();
   const dash  = q.indexOf(' - ');
-  const qArtist = dash > 0 ? q.slice(0, dash).trim()  : '';
   const qTitle  = dash > 0 ? q.slice(dash + 3).trim() : q;
+  // Normalize multi-artist separator (comma/ampersand/feat) to space so it
+  // matches the way track.artists is joined below ("artist1 artist2").
+  const qArtist = dash > 0
+    ? q.slice(0, dash).trim().split(/\s*[,&\/]\s*|\s+feat\.?\s+/i).map(a => a.trim()).join(' ')
+    : '';
 
   let bestScore = -Infinity;
   let bestTrack = tracks[0];
