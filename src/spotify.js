@@ -134,7 +134,7 @@ async function apiRequest(method, url, data = null, maxRetries = 3) {
  *   1. If the raw string contains " - ", split into artist / title and use
  *      Spotify's field filter: `<title> artist:<artist>` — this is highly
  *      precise and avoids false positives from similarly-named tracks.
- *   2. If that returns nothing, fall back to a plain keyword query.
+ *   2. If that returns nothing (or a 400), fall back to a plain keyword query.
  *   3. Among up to 5 results, score each track on title similarity, artist
  *      similarity, and popularity, then return the highest scorer.
  *
@@ -147,40 +147,61 @@ async function searchTrack(query) {
   const dash = query.indexOf(' - ');
   let primaryQuery;
 
+  // Remove characters Spotify's query parser treats as operators.
+  // - ​-‏: zero-width space / joining chars
+  // - ‪-‮: directional embedding/override marks
+  // - ﻿: BOM / zero-width no-break space
+  // These arrive invisibly from the Hebrew radio page and cause 400 errors.
+  const stripOps = (s) => s
+    .replace(/[​-‏‪-‮﻿]/g, '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/['"()\[\]{}!?:]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   if (dash > 0) {
     const artist = query.slice(0, dash).trim();
     const title  = query.slice(dash + 3).trim();
     // Spotify's artist: filter accepts only a single artist name.
     // Split on comma, ampersand, slash, or "feat." and take the first one.
     const primaryArtist = artist.split(/\s*[,&\/]\s*|\s+feat\.?\s+/i)[0].trim();
-    // Strip characters Spotify's query parser treats as operators.
-    // Parentheses are grouping operators; apostrophes/quotes cause parse errors.
-    const stripOps = (s) => s.replace(/\s*\([^)]*\)/g, '').replace(/['"()\[\]{}!?:]/g, '').replace(/\s+/g, ' ').trim();
     const cleanTitle  = stripOps(title);
     const cleanArtist = stripOps(primaryArtist);
     primaryQuery = `${cleanTitle} artist:${cleanArtist}`;
     logger.debug(`[spotify] Parsed → artist="${artist}", cleanArtist="${cleanArtist}", title="${title}", cleanTitle="${cleanTitle}"`);
   } else {
-    primaryQuery = query;
+    primaryQuery = stripOps(query);
   }
 
-  const data = await apiRequest(
-    'GET',
-    `/search?q=${encodeURIComponent(primaryQuery)}&type=track&limit=5&market=IL`
-  );
+  // Attempt field-filter query; if Spotify rejects it (400) fall straight
+  // through to the plain-query fallback rather than surfacing an error.
+  let data = null;
+  try {
+    data = await apiRequest(
+      'GET',
+      `/search?q=${encodeURIComponent(primaryQuery)}&type=track&limit=5&market=IL`
+    );
+  } catch (err) {
+    if (err.message.includes('400')) {
+      logger.warn(`[spotify] Field-filter query returned 400, falling back to plain query. Query was: "${primaryQuery}"`);
+    } else {
+      throw err;
+    }
+  }
 
-  if (data.tracks?.items?.length) {
+  if (data?.tracks?.items?.length) {
     return pickBestMatch(data.tracks.items, query);
   }
 
-  // Fallback: plain query (handles edge cases where artist field filter is too strict)
-  if (primaryQuery !== query) {
-    logger.debug(`[spotify] No results with field filter, trying plain query: "${query}"`);
+  // Fallback: plain query (handles edge cases where field filter is too strict or rejected)
+  const plainQuery = stripOps(query);
+  if (plainQuery !== primaryQuery) {
+    logger.debug(`[spotify] No results with field filter, trying plain query: "${plainQuery}"`);
     const fallback = await apiRequest(
       'GET',
-      `/search?q=${encodeURIComponent(query)}&type=track&limit=5&market=IL`
+      `/search?q=${encodeURIComponent(plainQuery)}&type=track&limit=5&market=IL`
     );
-    if (fallback.tracks?.items?.length) {
+    if (fallback?.tracks?.items?.length) {
       return pickBestMatch(fallback.tracks.items, query);
     }
   }
@@ -216,7 +237,7 @@ function pickBestMatch(tracks, rawQuery) {
       else if (qArtist.includes(artists)) score += 3;
     }
 
-    // Popularity as a tiebreaker (0–100 → 0–5 points)
+    // Popularity as a tiebreaker (0-100 -> 0-5 points)
     score += track.popularity / 20;
 
     if (score > bestScore) {
@@ -272,7 +293,7 @@ async function getPlaylistTracks() {
 async function addTrackToPlaylist(trackUri) {
   await apiRequest('POST', `/playlists/${config.spotify.playlistId}/tracks`, {
     uris: [trackUri],
-    // No `position` → appended at the end
+    // No `position` -> appended at the end
   });
   logger.debug(`[spotify] Appended ${trackUri} to playlist`);
 }
@@ -303,7 +324,7 @@ async function trimPlaylist(maxSize) {
 
   const excess   = tracks.length - maxSize;
   const toRemove = tracks.slice(0, excess).map((t) => t.uri);
-  logger.info(`[spotify] Trimming playlist: ${tracks.length} → ${maxSize} (removing ${excess} oldest track(s))`);
+  logger.info(`[spotify] Trimming playlist: ${tracks.length} -> ${maxSize} (removing ${excess} oldest track(s))`);
   await removeTracksFromPlaylist(toRemove);
 }
 
