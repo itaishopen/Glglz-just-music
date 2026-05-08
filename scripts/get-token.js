@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 /**
  * One-time helper to obtain a Spotify refresh token via the OAuth 2.0
- * Authorization Code flow.
+ * Authorization Code flow over HTTPS.
  *
- * Usage:
- *   1. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env (or export them)
+ * Prerequisites:
+ *   1. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env
  *   2. In your Spotify Developer Dashboard add the redirect URI:
- *        http://localhost:8888/callback
+ *        https://localhost:8888/callback
  *   3. Run:  node scripts/get-token.js
- *   4. Open the printed URL in a browser, authorise the app
+ *   4. Open the printed URL in a browser and authorise the app.
+ *      Your browser will warn about a self-signed certificate — this is expected:
+ *        Chrome  → click "Advanced" then "Proceed to localhost (unsafe)"
+ *                  (if no link appears, click anywhere on the page and type: thisisunsafe)
+ *        Firefox → click "Advanced" then "Accept the Risk and Continue"
  *   5. Copy the SPOTIFY_REFRESH_TOKEN printed in the terminal into your .env
  */
 
@@ -16,17 +20,16 @@
 
 require('dotenv').config();
 
-const http        = require('http');
 const https       = require('https');
 const crypto      = require('crypto');
 const querystring = require('querystring');
+const { generateCert } = require('./lib/cert');
 
 const CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI  = 'http://localhost:8888/callback';
+const REDIRECT_URI  = 'https://localhost:8888/callback';
 const PORT          = 8888;
 
-// Scopes required by the monitor script
 const SCOPES = [
   'playlist-modify-public',
   'playlist-modify-private',
@@ -39,6 +42,16 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
     '\n❌  SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set.\n' +
     '    Copy .env.example to .env and fill in those two values first.\n'
   );
+  process.exit(1);
+}
+
+// Generate a temporary self-signed cert so the local server can use HTTPS
+let sslCreds;
+try {
+  console.log('Generating self-signed certificate…');
+  sslCreds = generateCert();
+} catch (err) {
+  console.error(`\n❌  ${err.message}`);
   process.exit(1);
 }
 
@@ -58,16 +71,20 @@ console.log(' Spotify Refresh Token Helper');
 console.log('══════════════════════════════════════════════════\n');
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
-console.log('Step 2 — Click "Agree" / "Authorise"');
-console.log('Step 3 — You will be redirected; the token will print here.\n');
+console.log('Step 2 — Click "Agree" / "Authorise" in Spotify');
+console.log('Step 3 — Your browser will warn about the certificate (self-signed):');
+console.log('           Chrome  → Advanced → Proceed to localhost (unsafe)');
+console.log('                     (or type  thisisunsafe  if no link appears)');
+console.log('           Firefox → Advanced → Accept the Risk and Continue');
+console.log('Step 4 — The token will print here automatically.\n');
 
-const server = http.createServer(async (req, res) => {
-  if (!req.url || !req.url.startsWith('/callback')) return;
+const server = https.createServer(sslCreds, async (req, res) => {
+  if (!req.url?.startsWith('/callback')) return;
 
-  const params       = new URLSearchParams(req.url.split('?')[1] || '');
-  const code         = params.get('code');
+  const params        = new URLSearchParams(req.url.split('?')[1] || '');
+  const code          = params.get('code');
   const returnedState = params.get('state');
-  const error        = params.get('error');
+  const error         = params.get('error');
 
   if (error) {
     res.writeHead(400, { 'Content-Type': 'text/plain' });
@@ -98,11 +115,11 @@ const server = http.createServer(async (req, res) => {
     console.log('✅  SUCCESS — add this line to your .env file:');
     console.log('══════════════════════════════════════════════════\n');
     console.log(`SPOTIFY_REFRESH_TOKEN=${tokens.refresh_token}\n`);
+
     if (!tokens.refresh_token) {
       console.warn(
-        '⚠️  No refresh_token returned.  Make sure "offline_access" (refresh) ' +
-        'is not already granted.  Try revoking access in ' +
-        'https://www.spotify.com/account/apps and re-running this script.'
+        '⚠️  No refresh_token returned. Try revoking access in\n' +
+        '    https://www.spotify.com/account/apps and re-running this script.\n'
       );
     }
   } catch (err) {
@@ -115,8 +132,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Listening on http://localhost:${PORT}/callback\n`);
+  console.log(`HTTPS server listening on https://localhost:${PORT}/callback\n`);
 });
+
+// ── Token exchange ────────────────────────────────────────────────────────────
 
 function exchangeCode(code) {
   return new Promise((resolve, reject) => {
@@ -133,8 +152,8 @@ function exchangeCode(code) {
         path:     '/api/token',
         method:   'POST',
         headers:  {
-          Authorization:   `Basic ${credentials}`,
-          'Content-Type':  'application/x-www-form-urlencoded',
+          Authorization:    `Basic ${credentials}`,
+          'Content-Type':   'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(body),
         },
       },

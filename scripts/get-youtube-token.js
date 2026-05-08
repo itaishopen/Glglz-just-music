@@ -1,30 +1,35 @@
 #!/usr/bin/env node
 /**
- * One-time helper to obtain a YouTube (Google) refresh token via OAuth 2.0.
+ * One-time helper to obtain a YouTube (Google) refresh token via OAuth 2.0
+ * over HTTPS.
  *
  * Prerequisites:
  *   1. Create a Google Cloud project and enable YouTube Data API v3.
  *   2. Create an OAuth 2.0 "Web application" credential.
- *   3. Add  http://localhost:8889/callback  as an Authorised Redirect URI.
+ *   3. Add  https://localhost:8889/callback  as an Authorised Redirect URI.
  *   4. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET in .env.
  *
  * Usage:
  *   node scripts/get-youtube-token.js
- *   → Open the printed URL, authorise, copy YOUTUBE_REFRESH_TOKEN into .env.
+ *
+ * Browser certificate warning (expected — self-signed cert):
+ *   Chrome  → Advanced → Proceed to localhost (unsafe)
+ *             (or type  thisisunsafe  if no link appears)
+ *   Firefox → Advanced → Accept the Risk and Continue
  */
 
 'use strict';
 
 require('dotenv').config();
 
-const http        = require('http');
 const https       = require('https');
 const crypto      = require('crypto');
 const querystring = require('querystring');
+const { generateCert } = require('./lib/cert');
 
 const CLIENT_ID     = process.env.YOUTUBE_CLIENT_ID;
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
-const REDIRECT_URI  = 'http://localhost:8889/callback';
+const REDIRECT_URI  = 'https://localhost:8889/callback';
 const PORT          = 8889;   // different from Spotify helper (8888)
 
 const SCOPES = 'https://www.googleapis.com/auth/youtube';
@@ -37,6 +42,16 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
   process.exit(1);
 }
 
+// Generate a temporary self-signed cert so the local server can use HTTPS
+let sslCreds;
+try {
+  console.log('Generating self-signed certificate…');
+  sslCreds = generateCert();
+} catch (err) {
+  console.error(`\n❌  ${err.message}`);
+  process.exit(1);
+}
+
 const state   = crypto.randomBytes(16).toString('hex');
 const authUrl =
   'https://accounts.google.com/o/oauth2/v2/auth?' +
@@ -45,8 +60,8 @@ const authUrl =
     redirect_uri:  REDIRECT_URI,
     response_type: 'code',
     scope:         SCOPES,
-    access_type:   'offline',   // required to get a refresh_token
-    prompt:        'consent',   // force Google to always return a refresh_token
+    access_type:   'offline',
+    prompt:        'consent',
     state,
   });
 
@@ -56,9 +71,13 @@ console.log('══════════════════════�
 console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
 console.log('Step 2 — Sign in and click "Allow"');
-console.log('Step 3 — You will be redirected; the token will print here.\n');
+console.log('Step 3 — Your browser will warn about the certificate (self-signed):');
+console.log('           Chrome  → Advanced → Proceed to localhost (unsafe)');
+console.log('                     (or type  thisisunsafe  if no link appears)');
+console.log('           Firefox → Advanced → Accept the Risk and Continue');
+console.log('Step 4 — The token will print here automatically.\n');
 
-const server = http.createServer(async (req, res) => {
+const server = https.createServer(sslCreds, async (req, res) => {
   if (!req.url?.startsWith('/callback')) return;
 
   const params        = new URLSearchParams(req.url.split('?')[1] || '');
@@ -99,10 +118,8 @@ const server = http.createServer(async (req, res) => {
     if (!tokens.refresh_token) {
       console.warn(
         '⚠️  No refresh_token in response.\n' +
-        '   Make sure you added  prompt=consent  (already in this script) and\n' +
-        '   that you selected "Allow" on the Google consent screen.\n' +
-        '   If you have previously authorised this app, revoke it at\n' +
-        '   https://myaccount.google.com/permissions  and re-run this script.\n'
+        '   Revoke the app at https://myaccount.google.com/permissions\n' +
+        '   and re-run this script.\n'
       );
     }
   } catch (err) {
@@ -115,8 +132,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Listening on http://localhost:${PORT}/callback\n`);
+  console.log(`HTTPS server listening on https://localhost:${PORT}/callback\n`);
 });
+
+// ── Token exchange ────────────────────────────────────────────────────────────
 
 function exchangeCode(code) {
   return new Promise((resolve, reject) => {
