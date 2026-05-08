@@ -82,21 +82,21 @@ async function tick() {
     logger.warn(`[spotify] Duplicate check failed (proceeding anyway): ${err.message}`);
   }
 
-  // 7. Add to playlist
+  // 7. Trim to maxSize-1 before adding so the playlist never exceeds the cap
+  try {
+    await spotify.trimPlaylist(config.monitor.maxPlaylistSize - 1);
+  } catch (err) {
+    logger.error(`[spotify] Trim failed: ${err.message}`);
+    // Non-fatal — proceed with the add anyway
+  }
+
+  // 8. Add to playlist
   try {
     await spotify.addTrackToPlaylist(track.uri);
     logger.info(`✓ Added to playlist: "${track.name}" by ${track.artists}`);
   } catch (err) {
     logger.error(`[spotify] Add to playlist failed: ${err.message}`);
     return;
-  }
-
-  // 8. Trim playlist to configured max size
-  try {
-    await spotify.trimPlaylist(config.monitor.maxPlaylistSize);
-  } catch (err) {
-    logger.error(`[spotify] Trim failed: ${err.message}`);
-    // Non-fatal — the track was added; just log and continue
   }
 
   // 9. YouTube playlist (optional — skipped if YOUTUBE_* vars are not set)
