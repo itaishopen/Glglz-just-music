@@ -55,39 +55,39 @@ console.log('Step 1 — Open this URL in your browser:\n');
 console.log('  ' + authUrl + '\n');
 console.log('Step 2 — Log in and click "Allow"');
 console.log('Step 3 — Your browser will show "This site can\'t be reached" — that\'s expected.');
-console.log('Step 4 — Copy the FULL URL from the browser address bar (starts with https://localhost…)\n');
+console.log('Step 4 — You can paste EITHER:');
+console.log('           a) The full URL from the address bar: https://localhost:8889/callback?code=4/0A...');
+console.log('           b) Just the "code" value from the URL\n');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-rl.question('Paste the full redirect URL here: ', async (input) => {
+rl.question('Paste the URL or code here: ', async (input) => {
   rl.close();
   input = input.trim();
 
-  let url;
-  try {
-    url = new URL(input);
-  } catch {
-    console.error('\n❌  That does not look like a valid URL. Please try again.\n');
-    process.exit(1);
-  }
+  let code;
 
-  const code          = url.searchParams.get('code');
-  const returnedState = url.searchParams.get('state');
-  const error         = url.searchParams.get('error');
+  if (input.startsWith('http')) {
+    let url;
+    try { url = new URL(input); } catch {
+      console.error('\n❌  That does not look like a valid URL. Please try again.\n');
+      process.exit(1);
+    }
 
-  if (error) {
-    console.error(`\n❌  Google returned an error: ${error}\n`);
-    process.exit(1);
-  }
+    const error         = url.searchParams.get('error');
+    const returnedState = url.searchParams.get('state');
+    code                = url.searchParams.get('code');
 
-  if (!code) {
-    console.error('\n❌  No "code" found in the URL. Make sure you copied the full redirect URL.\n');
-    process.exit(1);
-  }
+    if (error) { console.error(`\n❌  Google returned an error: ${error}\n`); process.exit(1); }
+    if (!code)  { console.error('\n❌  No "code" in URL. Make sure you copied the full redirect URL.\n'); process.exit(1); }
 
-  if (returnedState !== state) {
-    console.error('\n❌  State mismatch — the URL may be from a previous session. Run the script again.\n');
-    process.exit(1);
+    if (returnedState !== state) {
+      console.error('\n❌  State mismatch — URL may be from a previous session. Run the script again.\n');
+      process.exit(1);
+    }
+  } else {
+    code = input;
+    if (!code) { console.error('\n❌  Nothing was pasted. Please try again.\n'); process.exit(1); }
   }
 
   try {
