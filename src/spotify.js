@@ -55,7 +55,7 @@ async function getAccessToken() {
 
   _accessToken    = response.data.access_token;
   _tokenExpiresAt = Date.now() + response.data.expires_in * 1000;
-  logger.debug('[spotify] Access token refreshed');
+  logger.info(`[spotify] Token scopes granted: ${response.data.scope || '(none returned)'}`);
   return _accessToken;
 }
 
@@ -390,17 +390,36 @@ async function checkAccess() {
 
   try {
     const pl = await apiRequest('GET', `/playlists/${config.spotify.playlistId}?fields=name,owner`);
-    logger.info(`[spotify] Playlist access OK: "${pl.name}" (owned by ${pl.owner?.display_name || pl.owner?.id})`);
+    logger.info(`[spotify] Playlist metadata OK: "${pl.name}" (owned by ${pl.owner?.display_name || pl.owner?.id})`);
   } catch (err) {
     if (err.message.includes('403') || err.message.includes('404')) {
       logger.error(`[spotify] Cannot access playlist ID "${config.spotify.playlistId}": ${err.message}`);
       logger.error('[spotify]   → Check SPOTIFY_PLAYLIST_ID in .env.');
       logger.error('[spotify]     To find it: open the playlist in Spotify → Share → Copy link.');
       logger.error('[spotify]     The ID is the part after /playlist/ and before the ?');
-      logger.error(`[spotify]     Example: open.spotify.com/playlist/3RCL6s6xJasw4SydPI1j09 → ID is 3RCL6s6xJasw4SydPI1j09`);
-      logger.error(`[spotify]     Also confirm the playlist belongs to account: ${me.display_name || me.id}`);
     } else {
-      logger.error(`[spotify] Playlist check failed: ${err.message}`);
+      logger.error(`[spotify] Playlist metadata check failed: ${err.message}`);
+    }
+    return;
+  }
+
+  // Test the tracks endpoint specifically — this requires playlist-read-private
+  // scope and is what actually fails if the token was granted without scopes.
+  try {
+    await apiRequest('GET', `/playlists/${config.spotify.playlistId}/tracks?limit=1`);
+    logger.info('[spotify] Playlist read/write access confirmed ✓');
+  } catch (err) {
+    if (err.message.includes('403')) {
+      logger.error('[spotify] ✗ Cannot read playlist tracks — token is missing playlist scopes.');
+      logger.error('[spotify]   The token was likely granted before the required scopes were added.');
+      logger.error('[spotify]   Fix:');
+      logger.error('[spotify]     1. Open https://www.spotify.com/account/apps in your browser');
+      logger.error(`[spotify]        Find your app and click "REMOVE ACCESS"`);
+      logger.error('[spotify]     2. Run  node scripts/get-token.js  on your laptop again');
+      logger.error('[spotify]        (the Agree button will appear with all required scopes listed)');
+      logger.error('[spotify]     3. Copy the new SPOTIFY_REFRESH_TOKEN to .env on the Pi and restart');
+    } else {
+      logger.error(`[spotify] Playlist tracks check failed: ${err.message}`);
     }
   }
 }
