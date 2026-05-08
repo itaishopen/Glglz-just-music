@@ -150,8 +150,11 @@ async function searchTrack(query) {
   if (dash > 0) {
     const artist = query.slice(0, dash).trim();
     const title  = query.slice(dash + 3).trim();
-    primaryQuery = `${title} artist:${artist}`;
-    logger.debug(`[spotify] Parsed → artist="${artist}", title="${title}"`);
+    // Spotify's artist: filter accepts only a single artist name.
+    // Split on comma, ampersand, slash, or "feat." and take the first one.
+    const primaryArtist = artist.split(/\s*[,&\/]\s*|\s+feat\.?\s+/i)[0].trim();
+    primaryQuery = `${title} artist:${primaryArtist}`;
+    logger.debug(`[spotify] Parsed → artist="${artist}", primaryArtist="${primaryArtist}", title="${title}"`);
   } else {
     primaryQuery = query;
   }
