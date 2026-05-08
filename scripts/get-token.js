@@ -51,6 +51,7 @@ const authUrl = 'https://accounts.spotify.com/authorize?' + qs.stringify({
   scope:         SCOPES,
   redirect_uri:  REDIRECT_URI,
   state,
+  show_dialog:   'true',  // always show Agree screen so new scopes are granted
 });
 
 console.log('\n══════════════════════════════════════════════════');
