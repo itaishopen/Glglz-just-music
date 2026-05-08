@@ -308,7 +308,7 @@ function pickBestMatch(tracks, rawQuery) {
 async function getPlaylistTracks() {
   const tracks = [];
   // Request only the fields we need to minimise payload size.
-  let url = `/playlists/${config.spotify.playlistId}/tracks` +
+  let url = `/playlists/${config.spotify.playlistId}/items` +
             `?fields=next,items(track(uri,id))&limit=100`;
 
   while (url) {
@@ -328,7 +328,7 @@ async function getPlaylistTracks() {
  * Append a single track to the end of the playlist (chronological order).
  */
 async function addTrackToPlaylist(trackUri) {
-  await apiRequest('POST', `/playlists/${config.spotify.playlistId}/tracks`, {
+  await apiRequest('POST', `/playlists/${config.spotify.playlistId}/items`, {
     uris: [trackUri],
     // No `position` -> appended at the end
   });
@@ -343,7 +343,7 @@ async function removeTracksFromPlaylist(uris) {
   if (!uris.length) return;
   for (let i = 0; i < uris.length; i += 100) {
     const batch = uris.slice(i, i + 100).map((uri) => ({ uri }));
-    await apiRequest('DELETE', `/playlists/${config.spotify.playlistId}/tracks`, {
+    await apiRequest('DELETE', `/playlists/${config.spotify.playlistId}/items`, {
       tracks: batch,
     });
   }
@@ -414,7 +414,7 @@ async function checkAccess() {
   // Test the tracks endpoint specifically — this requires playlist-read-private
   // scope and is what actually fails if the token was granted without scopes.
   try {
-    await apiRequest('GET', `/playlists/${config.spotify.playlistId}/tracks?limit=1`);
+    await apiRequest('GET', `/playlists/${config.spotify.playlistId}/items?limit=1`);
     logger.info('[spotify] Playlist read/write access confirmed ✓');
   } catch (err) {
     if (err.message.includes('403')) {
