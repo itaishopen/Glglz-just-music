@@ -119,6 +119,12 @@ async function apiRequest(method, url, data = null, maxRetries = 3) {
 
         if (status === 429) {
           const retryAfter = parseInt(headers['retry-after'] || '10', 10);
+          const MAX_RETRY_WAIT = 60;
+          if (retryAfter > MAX_RETRY_WAIT) {
+            throw new Error(
+              `Spotify rate limited — Retry-After ${retryAfter}s is too long to wait. Will retry next cycle.`
+            );
+          }
           logger.warn(`[spotify] Rate limited (429). Waiting ${retryAfter}s before retry ${attempt}/${maxRetries}`);
           await sleep(retryAfter * 1000);
           if (attempt < maxRetries) continue;
