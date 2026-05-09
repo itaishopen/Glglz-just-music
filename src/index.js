@@ -96,19 +96,20 @@ async function tick() {
     return;
   }
 
-  // 9. Trim oldest if playlist now exceeds max size (using cached list + 1 for the song just added)
-  if (playlistTracks) {
-    const sizeAfterAdd = playlistTracks.length + 1;
+  // 9. Trim oldest tracks if playlist exceeds max size.
+  // Use the cached list if available (saves an API call); fall back to a fresh
+  // fetch so the trim always runs even if the earlier fetch failed.
+  try {
+    const tracksForTrim = playlistTracks ?? await spotify.getPlaylistTracks();
+    const sizeAfterAdd  = tracksForTrim.length + 1;
     if (sizeAfterAdd > config.monitor.maxPlaylistSize) {
-      const excess  = sizeAfterAdd - config.monitor.maxPlaylistSize;
-      const toRemove = playlistTracks.slice(0, excess).map((t) => t.uri);
-      try {
-        await spotify.removeTracksFromPlaylist(toRemove);
-        logger.info(`[spotify] Trimmed ${excess} oldest track(s)`);
-      } catch (err) {
-        logger.error(`[spotify] Trim failed: ${err.message}`);
-      }
+      const excess   = sizeAfterAdd - config.monitor.maxPlaylistSize;
+      const toRemove = tracksForTrim.slice(0, excess).map((t) => t.uri);
+      await spotify.removeTracksFromPlaylist(toRemove);
+      logger.info(`[spotify] Trimmed ${excess} oldest track(s)`);
     }
+  } catch (err) {
+    logger.error(`[spotify] Trim failed: ${err.message}`);
   }
 
   // 10. YouTube playlist (optional — skipped if YOUTUBE_* vars are not set)
