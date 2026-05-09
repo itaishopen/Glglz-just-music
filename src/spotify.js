@@ -445,6 +445,7 @@ async function checkAccess() {
 module.exports = {
   searchTrack,
   addTrackToPlaylist,
+  removeTracksFromPlaylist,
   getPlaylistTracks,
   trimPlaylist,
   isTrackInPlaylist,
