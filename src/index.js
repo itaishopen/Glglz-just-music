@@ -70,19 +70,24 @@ async function tick() {
 
   logger.info(`Found on Spotify: "${track.name}" by ${track.artists} (popularity: ${track.popularity})`);
 
-  // 6. Check for duplicates already in the playlist
+  // 6. Fetch playlist once — reused for duplicate check and trim
+  let playlistTracks = null;
   try {
-    const alreadyIn = await spotify.isTrackInPlaylist(track.uri);
-    if (alreadyIn) {
+    playlistTracks = await spotify.getPlaylistTracks();
+  } catch (err) {
+    logger.warn(`[spotify] Could not fetch playlist tracks (proceeding anyway): ${err.message}`);
+  }
+
+  // 7. Duplicate check using cached list
+  if (playlistTracks) {
+    if (playlistTracks.some((t) => t.uri === track.uri)) {
       logger.info('Track already in playlist — skipping add');
       state.setLastSong(normalized);
       return;
     }
-  } catch (err) {
-    logger.warn(`[spotify] Duplicate check failed (proceeding anyway): ${err.message}`);
   }
 
-  // 7. Add to playlist
+  // 8. Add to playlist
   try {
     await spotify.addTrackToPlaylist(track.uri);
     logger.info(`✓ Added to playlist: "${track.name}" by ${track.artists}`);
@@ -91,19 +96,27 @@ async function tick() {
     return;
   }
 
-  // 8. Trim oldest song if playlist exceeds max size
-  try {
-    await spotify.trimPlaylist(config.monitor.maxPlaylistSize);
-  } catch (err) {
-    logger.error(`[spotify] Trim failed: ${err.message}`);
+  // 9. Trim oldest if playlist now exceeds max size (using cached list + 1 for the song just added)
+  if (playlistTracks) {
+    const sizeAfterAdd = playlistTracks.length + 1;
+    if (sizeAfterAdd > config.monitor.maxPlaylistSize) {
+      const excess  = sizeAfterAdd - config.monitor.maxPlaylistSize;
+      const toRemove = playlistTracks.slice(0, excess).map((t) => t.uri);
+      try {
+        await spotify.removeTracksFromPlaylist(toRemove);
+        logger.info(`[spotify] Trimmed ${excess} oldest track(s)`);
+      } catch (err) {
+        logger.error(`[spotify] Trim failed: ${err.message}`);
+      }
+    }
   }
 
-  // 9. YouTube playlist (optional — skipped if YOUTUBE_* vars are not set)
+  // 10. YouTube playlist (optional — skipped if YOUTUBE_* vars are not set)
   if (config.youtube) {
     await addToYouTube(currentSong);
   }
 
-  // 10. Persist state
+  // 11. Persist state
   state.setLastSong(normalized);
   logger.info(`State updated ✓`);
 }
