@@ -317,9 +317,7 @@ function pickBestMatch(tracks, rawQuery) {
  */
 async function getPlaylistTracks() {
   const tracks = [];
-  // Request only the fields we need to minimise payload size.
-  let url = `/playlists/${config.spotify.playlistId}/items` +
-            `?fields=next,items(track(uri,id))&limit=100`;
+  let url = `/playlists/${config.spotify.playlistId}/items?limit=100`;
 
   while (url) {
     const data = await apiRequest('GET', url);
