@@ -317,7 +317,7 @@ function pickBestMatch(tracks, rawQuery) {
 async function getPlaylistTotal() {
   const data = await apiRequest(
     'GET',
-    `/playlists/${config.spotify.playlistId}?fields=tracks.total`
+    `/playlists/${config.spotify.playlistId}`
   );
   return data.tracks?.total ?? 0;
 }
