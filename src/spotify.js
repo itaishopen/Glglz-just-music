@@ -311,25 +311,52 @@ function pickBestMatch(tracks, rawQuery) {
 // ── Playlist management ───────────────────────────────────────────────────────
 
 /**
- * Fetch all track URIs and IDs from the target playlist, handling Spotify's
- * 100-item pagination automatically.
- * Returns items in playlist order: index 0 = oldest (first added at bottom).
+ * Return the total number of tracks in the playlist using the lightweight
+ * GET /playlists/{id}?fields=tracks.total endpoint — no pagination needed.
  */
-async function getPlaylistTracks() {
-  const tracks = [];
-  let url = `/playlists/${config.spotify.playlistId}/items?limit=100`;
+async function getPlaylistTotal() {
+  const data = await apiRequest(
+    'GET',
+    `/playlists/${config.spotify.playlistId}?fields=tracks.total`
+  );
+  return data.tracks?.total ?? 0;
+}
 
-  while (url) {
-    const data = await apiRequest('GET', url);
+/**
+ * Fetch the oldest `count` tracks from the playlist using offset-based
+ * pagination. Only fetches what it needs — avoids pulling the full list.
+ */
+async function getOldestTracks(count) {
+  const tracks  = [];
+  let offset    = 0;
+  let remaining = count;
+
+  while (remaining > 0) {
+    const limit = Math.min(100, remaining);
+    const data  = await apiRequest(
+      'GET',
+      `/playlists/${config.spotify.playlistId}/items?limit=${limit}&offset=${offset}`
+    );
     for (const item of (data.items || [])) {
       if (item.track?.uri) {
         tracks.push({ uri: item.track.uri, id: item.track.id });
       }
     }
-    url = data.next || null;   // data.next is a full URL or null
+    offset    += limit;
+    remaining -= limit;
   }
 
   return tracks;
+}
+
+/**
+ * Fetch all track URIs and IDs from the target playlist using offset-based
+ * pagination. Used for duplicate checking.
+ */
+async function getPlaylistTracks() {
+  const total = await getPlaylistTotal();
+  if (total === 0) return [];
+  return getOldestTracks(total);
 }
 
 /**
@@ -338,7 +365,6 @@ async function getPlaylistTracks() {
 async function addTrackToPlaylist(trackUri) {
   await apiRequest('POST', `/playlists/${config.spotify.playlistId}/items`, {
     uris: [trackUri],
-    // No `position` -> appended at the end
   });
   logger.debug(`[spotify] Appended ${trackUri} to playlist`);
 }
@@ -359,23 +385,22 @@ async function removeTracksFromPlaylist(uris) {
 }
 
 /**
- * Ensure the playlist does not exceed maxSize items.
- * Since we always append at the end, the oldest items are at the beginning
- * (lowest indices) — those are removed first.
+ * Trim the playlist to maxSize by removing the oldest tracks.
+ * Uses tracks.total for the count (1 API call) then fetches only the
+ * excess tracks to remove — never pulls the full list unnecessarily.
  */
 async function trimPlaylist(maxSize) {
-  const tracks = await getPlaylistTracks();
-  if (tracks.length <= maxSize) return;
+  const total = await getPlaylistTotal();
+  if (total <= maxSize) return;
 
-  const excess   = tracks.length - maxSize;
-  const toRemove = tracks.slice(0, excess).map((t) => t.uri);
-  logger.info(`[spotify] Trimming playlist: ${tracks.length} -> ${maxSize} (removing ${excess} oldest track(s))`);
-  await removeTracksFromPlaylist(toRemove);
+  const excess = total - maxSize;
+  logger.info(`[spotify] Trimming playlist: ${total} -> ${maxSize} (removing ${excess} oldest)`);
+  const toRemove = await getOldestTracks(excess);
+  await removeTracksFromPlaylist(toRemove.map((t) => t.uri));
 }
 
 /**
  * Return true if the given track URI is already in the playlist.
- * Used to prevent duplicates when the same song plays across multiple checks.
  */
 async function isTrackInPlaylist(trackUri) {
   const tracks = await getPlaylistTracks();
@@ -444,6 +469,7 @@ module.exports = {
   searchTrack,
   addTrackToPlaylist,
   removeTracksFromPlaylist,
+  getPlaylistTotal,
   getPlaylistTracks,
   trimPlaylist,
   isTrackInPlaylist,

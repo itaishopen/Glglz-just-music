@@ -70,24 +70,18 @@ async function tick() {
 
   logger.info(`Found on Spotify: "${track.name}" by ${track.artists} (popularity: ${track.popularity})`);
 
-  // 6. Fetch playlist once — reused for duplicate check and trim
-  let playlistTracks = null;
+  // 6. Duplicate check
   try {
-    playlistTracks = await spotify.getPlaylistTracks();
-  } catch (err) {
-    logger.warn(`[spotify] Could not fetch playlist tracks (proceeding anyway): ${err.message}`);
-  }
-
-  // 7. Duplicate check using cached list
-  if (playlistTracks) {
-    if (playlistTracks.some((t) => t.uri === track.uri)) {
+    if (await spotify.isTrackInPlaylist(track.uri)) {
       logger.info('Track already in playlist — skipping add');
       state.setLastSong(normalized);
       return;
     }
+  } catch (err) {
+    logger.warn(`[spotify] Duplicate check failed (proceeding anyway): ${err.message}`);
   }
 
-  // 8. Add to playlist
+  // 7. Add to playlist
   try {
     await spotify.addTrackToPlaylist(track.uri);
     logger.info(`✓ Added to playlist: "${track.name}" by ${track.artists}`);
@@ -96,18 +90,9 @@ async function tick() {
     return;
   }
 
-  // 9. Trim oldest tracks if playlist exceeds max size.
-  // Use the cached list if available (saves an API call); fall back to a fresh
-  // fetch so the trim always runs even if the earlier fetch failed.
+  // 8. Trim — uses tracks.total for count then only fetches the excess tracks
   try {
-    const tracksForTrim = playlistTracks ?? await spotify.getPlaylistTracks();
-    const sizeAfterAdd  = tracksForTrim.length + 1;
-    if (sizeAfterAdd > config.monitor.maxPlaylistSize) {
-      const excess   = sizeAfterAdd - config.monitor.maxPlaylistSize;
-      const toRemove = tracksForTrim.slice(0, excess).map((t) => t.uri);
-      await spotify.removeTracksFromPlaylist(toRemove);
-      logger.info(`[spotify] Trimmed ${excess} oldest track(s)`);
-    }
+    await spotify.trimPlaylist(config.monitor.maxPlaylistSize);
   } catch (err) {
     logger.error(`[spotify] Trim failed: ${err.message}`);
   }
@@ -187,20 +172,15 @@ async function main() {
   // Verify Spotify credentials and playlist access before the first tick.
   await spotify.checkAccess();
 
-  // Startup trim: if the playlist already exceeds the cap, remove the oldest
-  // songs and leave only the most recent maxPlaylistSize-1 so the first new
-  // song brings it to exactly maxPlaylistSize.
+  // Startup trim: reduce to maxPlaylistSize-1 so the first new song lands at exactly maxPlaylistSize.
   try {
-    const startupTracks = await spotify.getPlaylistTracks();
-    const startupCap    = config.monitor.maxPlaylistSize - 1;
-    if (startupTracks.length > startupCap) {
-      const excess   = startupTracks.length - startupCap;
-      const toRemove = startupTracks.slice(0, excess).map((t) => t.uri);
-      logger.info(`[spotify] Startup trim: ${startupTracks.length} songs found — removing ${excess} oldest to reach ${startupCap}`);
-      await spotify.removeTracksFromPlaylist(toRemove);
+    const startupCap   = config.monitor.maxPlaylistSize - 1;
+    const total        = await spotify.getPlaylistTotal();
+    logger.info(`[spotify] Startup: playlist has ${total} songs (cap is ${config.monitor.maxPlaylistSize})`);
+    if (total > startupCap) {
+      logger.info(`[spotify] Startup trim: removing ${total - startupCap} oldest tracks…`);
+      await spotify.trimPlaylist(startupCap);
       logger.info('[spotify] Startup trim complete ✓');
-    } else {
-      logger.info(`[spotify] Startup: playlist has ${startupTracks.length} songs — no trim needed`);
     }
   } catch (err) {
     logger.error(`[spotify] Startup trim failed: ${err.message}`);
